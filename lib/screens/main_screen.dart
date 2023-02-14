@@ -1,8 +1,10 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/apis/api.dart';
 import 'package:customer/interfaces/basket.dart';
 import 'package:customer/interfaces/item.dart';
+import 'package:customer/interfaces/order.dart' as FoodOrder;
 import 'package:customer/interfaces/prefs_key.dart';
 import 'package:customer/interfaces/shop_info.dart';
 import 'package:customer/providers/app_provider.dart';
@@ -10,6 +12,7 @@ import 'package:customer/screens/all_order.dart';
 import 'package:customer/screens/inbox.dart';
 import 'package:customer/screens/shop.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:customer/screens/cart.dart';
 import 'package:customer/screens/home.dart';
@@ -38,16 +41,29 @@ class _MainScreenState extends State<MainScreen> {
   final API api = API();
   Map<String, Basket> allBasket = {};
   String mainScreenTitle = Constants.appName;
+  FoodOrder.FilteredOrders allOrders = FoodOrder.FilteredOrders();
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
+
     api.getShopList().then((value) {
       print('MainScreen: ${value}');
       setState(() {
         shopList = value;
         setBasket();
+      });
+    });
+
+    api.getAllOrders(widget.user.uid).then((collectionStream) {
+      collectionStream.listen((event) {
+        api.allOrdersEventHandler(event, widget.user.uid).then((value) {
+          print('Main Screen: $value');
+          setState(() {
+            allOrders = value;
+          });
+        });
       });
     });
   }
@@ -218,7 +234,9 @@ class _MainScreenState extends State<MainScreen> {
                 updateBasket: updateBasket,
               ),
               showCartAll(),
-              AllOrderScreen(),
+              AllOrderScreen(
+                allOrders: allOrders,
+              ),
               Profile(user: widget.user),
             ],
           ),
@@ -259,9 +277,8 @@ class _MainScreenState extends State<MainScreen> {
                   color: _pageName[_page] == 'Order'
                       ? Theme.of(context).colorScheme.secondary
                       : theme.bottomNavigationBarTheme.unselectedItemColor,
-                  onPressed: () {
+                  onPressed: () async {
                     navigationTapped(2);
-                    api.getAllOrders(widget.user.uid);
                   },
                 ),
                 IconButton(

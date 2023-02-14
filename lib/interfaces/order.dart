@@ -11,17 +11,24 @@ class Order {
   List<ItemCounter> itemList;
   double cost;
   DateTime date;
-  bool isFinished = false;
-  String paymentStatus;
+  bool isCompleted;
+  bool isFinished;
+  bool isPaid;
 
   Order(this.uid, this.shopName, this.phoneNumber, this.itemList, this.cost,
       this.date,
-      {this.paymentStatus = 'Waiting for payment'});
+      {this.isCompleted = false, this.isFinished = false, this.isPaid = false});
 
   String toJsonEncoded() {
     List<Map<String, dynamic>> itemList = [];
     for (var itemCounter in this.itemList) {
-      itemList.add({'itemId': itemCounter.item.id, 'count': itemCounter.count});
+      itemList.add({
+        'name': itemCounter.item.name,
+        'price': itemCounter.item.price,
+        'id': itemCounter.item.id,
+        'image': itemCounter.item.image,
+        'count': itemCounter.count
+      });
     }
     Map<String, dynamic> obj = {
       'uid': uid,
@@ -30,8 +37,9 @@ class Order {
       'itemList': itemList,
       'cost': cost,
       'date': date.toIso8601String(),
+      'isCompleted': isCompleted,
       'isFinished': isFinished,
-      'status': paymentStatus
+      'isPaid': isPaid
     };
     if (orderId != null) {
       obj['orderId'] = orderId;
@@ -45,4 +53,27 @@ class PaymentStatus {
   static String waitingForPaymentConfirmation =
       'Waiting for payment confirmation';
   static String paymentSuccessful = 'Payment successful';
+}
+
+class FilteredOrders {
+  Map<String, List<Order>> cooking = {};
+  Map<String, List<Order>> ready = {};
+  Map<String, List<Order>> completed = {};
+
+  int length() {
+    int res = 0;
+    for (var key in cooking.keys) {
+      List list = cooking[key]!;
+      res += list.length;
+    }
+    for (var key in ready.keys) {
+      List list = cooking[key]!;
+      res += list.length;
+    }
+    for (var key in completed.keys) {
+      List list = cooking[key]!;
+      res += list.length;
+    }
+    return res;
+  }
 }

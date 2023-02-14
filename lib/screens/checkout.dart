@@ -1,3 +1,4 @@
+import 'package:customer/apis/api.dart';
 import 'package:customer/interfaces/basket.dart';
 import 'package:customer/interfaces/item.dart';
 import 'package:customer/interfaces/order.dart';
@@ -32,6 +33,7 @@ class Checkout extends StatefulWidget {
 }
 
 class _CheckoutState extends State<Checkout> {
+  final API api = API();
   final TextEditingController _couponlControl = TextEditingController();
   String paymentMethod = Payment.cash;
 
@@ -245,13 +247,18 @@ class _CheckoutState extends State<Checkout> {
                                   widget.basket.cost,
                                   DateTime.now());
                               print(order.toJsonEncoded());
+                              api.addOrder(order).then((res) {
+                                print('addOrder Result: ${res.body}');
+                                Provider.of<AppProvider>(context, listen: false)
+                                    .clearBasket();
+                              });
+                              widget.updateBasket(widget.shopInfo.name,
+                                  mode: 'clear');
                               Navigator.of(context)
                                   .push(MaterialPageRoute(builder: ((context) {
                                 return OrderStatusScreen(
                                   shopInfo: widget.shopInfo,
                                   order: order,
-                                  orderStatus: 'Waiting',
-                                  updateBasket: widget.updateBasket,
                                 );
                               })));
                             },

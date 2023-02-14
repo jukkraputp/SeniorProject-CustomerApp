@@ -19,8 +19,10 @@ class CartItem extends StatelessWidget {
       required this.shopName,
       required this.itemCounter,
       required this.isFav,
-      required this.updateBasket,
+      this.updateBasket = dummyFunction,
       this.adjustButtons = true});
+
+  static void dummyFunction(String shopName, {Item? item, String mode = '+'}) {}
 
   // feature
   final bool foodOptions = false;

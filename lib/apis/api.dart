@@ -27,28 +27,110 @@ class API {
 
   // Firestore Database
 
-  Future<Map<String, List<int>>> getAllOrders(String uid) async {
-    print('getting all orders: $uid');
-    Map<String, List<int>> allOrders = {};
-    CloudFS.DocumentSnapshot<Map<String, dynamic>> docSnapshot =
-        await _firestoreDB.collection('Orders').doc(uid).get();
-    if (docSnapshot.exists) {
-      List<dynamic> data = docSnapshot.data()!['data'] as List<dynamic>;
-      print(data);
-      for (var obj in data) {
-        int orderId = obj['orderId'];
-        String shopName = obj['shopName'];
-        print('$shopName order$orderId');
-        DatabaseReference ref = _rtDB.ref();
-        DataSnapshot orderData = await ref.child('Order/$shopName').get();
-        if (orderData.exists) {
-          print(orderData.value);
+  Future<Stream<CloudFS.QuerySnapshot<Map<String, dynamic>>>> getAllOrders(
+      String uid) async {
+    print('api - getting all orders: $uid');
+    FoodOrder.FilteredOrders allOrders = FoodOrder.FilteredOrders();
+    Stream<CloudFS.QuerySnapshot<Map<String, dynamic>>> collectionStream =
+        await _firestoreDB
+            .collection('Orders')
+            .where('uid', isEqualTo: uid)
+            .snapshots();
+    return collectionStream;
+  }
+
+  Future<FoodOrder.FilteredOrders> allOrdersEventHandler(
+      CloudFS.QuerySnapshot<Map<String, dynamic>> event, String uid) async {
+    FoodOrder.FilteredOrders allOrders = FoodOrder.FilteredOrders();
+    for (var doc in event.docs) {
+      Map<String, dynamic> obj = doc.data();
+      int orderId = obj['orderId'];
+      String shopName = obj['shopName'];
+      String date = obj['date'];
+      bool isCompleted = obj['isCompleted'];
+      bool isFinished = obj['isFinished'];
+      bool isPaid = obj['isPaid'];
+      print(
+          'api - getAllOrders: orderId=$orderId, shopName=$shopName, date=$date, isComplete=$isCompleted');
+      if (isCompleted) {
+        // search in firestore
+        CloudFS.QuerySnapshot<Map<String, dynamic>> snapshot =
+            await _firestoreDB
+                .collection('History')
+                .doc(shopName)
+                .collection(date)
+                .where('orderId', isEqualTo: orderId)
+                .get();
+        print('api - snapshot: $snapshot');
+        for (var doc in snapshot.docs) {
+          var data = doc.data();
+          CloudFS.Timestamp timestamp = data['date'];
+          List<ItemCounter> itemList = [];
+          for (var item in data['itemList']) {
+            itemList.add(ItemCounter(
+                Item(item['name'], item['price'], item['image'], item['id']),
+                item['count']));
+          }
+          // Completed
+          FoodOrder.Order order = FoodOrder.Order(
+              uid,
+              shopName,
+              data['phoneNumber'],
+              itemList,
+              data['cost'],
+              DateTime.fromMillisecondsSinceEpoch(
+                  timestamp.millisecondsSinceEpoch),
+              isCompleted: isCompleted,
+              isFinished: isFinished,
+              isPaid: isPaid);
+          if (allOrders.completed.containsKey(shopName)) {
+            allOrders.completed[shopName]!.add(order);
+          } else {
+            allOrders.completed[shopName] = [order];
+          }
+        }
+      } else {
+        // search in real time database
+        DatabaseReference ref = FirebaseDatabase.instance.ref();
+        DataSnapshot dataSnapshot =
+            await ref.child('Order/$shopName/$date/order$orderId').get();
+        Map<String, dynamic> dataObj =
+            json.decode(json.encode(dataSnapshot.value));
+        bool isFinished = dataObj['isFinished'];
+        List<ItemCounter> itemList = [];
+        for (var item in dataObj['itemList']) {
+          itemList.add(ItemCounter(
+              Item(item['name'], item['price'], item['image'], item['id']),
+              item['count']));
+        }
+        FoodOrder.Order order = FoodOrder.Order(
+            uid,
+            shopName,
+            dataObj['phoneNumber'],
+            itemList,
+            dataObj['cost'],
+            DateTime.parse(dataObj['date']),
+            isCompleted: isCompleted,
+            isFinished: isFinished,
+            isPaid: isPaid);
+        if (isFinished) {
+          // Ready
+          if (allOrders.ready.containsKey(shopName)) {
+            allOrders.ready[shopName]!.add(order);
+          } else {
+            allOrders.ready[shopName] = [order];
+          }
         } else {
-          print('No data available.');
+          // Cooking
+          if (allOrders.cooking.containsKey(shopName)) {
+            allOrders.cooking[shopName]!.add(order);
+          } else {
+            allOrders.cooking[shopName] = [order];
+          }
         }
       }
     }
-    return {};
+    return allOrders;
   }
 
   Future<String?> getShopName(String key) async {
@@ -77,6 +159,20 @@ class API {
       }
     }
     return res;
+  }
+
+  Future<ShopInfo?> getShopInfo(String shopName) async {
+    CloudFS.DocumentSnapshot docSnapshot =
+        await _firestoreDB.collection('ShopList').doc(shopName).get();
+    if (docSnapshot.exists) {
+      Map<String, dynamic> data = json.decode(json.encode(docSnapshot.data()!));
+      return ShopInfo(
+          name: data['name'],
+          rating: data['rating'],
+          review: data['review'],
+          phoneNumber: data['phoneNumber']);
+    }
+    return null;
   }
 
   /* Future<String?> getshopName(String token) async {
@@ -309,11 +405,13 @@ class API {
 
   // Write data to database through backend server api
   Future<http.Response> addOrder(FoodOrder.Order order) async {
+    String jsonEncoded = order.toJsonEncoded();
+    print('api - addOrder: $jsonEncoded');
     return http.post(Uri.parse('http://jukkraputp.sytes.net:7777/add'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8',
         },
-        body: order.toJsonEncoded());
+        body: jsonEncoded);
   }
 
   // get total amount of an order
