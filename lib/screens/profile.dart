@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:customer/util/confirmation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
@@ -9,9 +10,11 @@ import 'package:customer/screens/splash.dart';
 import 'package:customer/util/const.dart';
 
 class Profile extends StatefulWidget {
-  const Profile({super.key, required this.user});
+  const Profile({super.key, required this.user, required this.signOut});
 
   final User user;
+  final void Function() signOut;
+
   @override
   _ProfileState createState() => _ProfileState();
 }
@@ -75,7 +78,7 @@ class _ProfileState extends State<Profile> {
                           InkWell(
                             onTap: () => confirmation(context,
                                 onNo: () => Navigator.of(context).pop(false),
-                                onYes: () => FirebaseAuth.instance.signOut(),
+                                onYes: () => widget.signOut(),
                                 title: const Text('Logout'),
                                 content: const Text('Are you sure?')),
                             child: Text(
@@ -188,7 +191,7 @@ class _ProfileState extends State<Profile> {
                 "Jan 1, 2000",
               ),
             ), */
-            MediaQuery.of(context).platformBrightness == Brightness.dark
+            /* MediaQuery.of(context).platformBrightness == Brightness.dark
                 ? const SizedBox()
                 : ListTile(
                     title: const Text(
@@ -214,7 +217,7 @@ class _ProfileState extends State<Profile> {
                       },
                       activeColor: Theme.of(context).colorScheme.secondary,
                     ),
-                  ),
+                  ), */
           ],
         ),
       ),

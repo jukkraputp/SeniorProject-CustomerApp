@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:customer/apis/api.dart';
 import 'package:customer/interfaces/basket.dart';
 import 'package:customer/interfaces/item.dart';
@@ -9,10 +11,13 @@ import 'package:customer/screens/order_status.dart';
 import 'package:customer/screens/payment.dart';
 import 'package:customer/util/confirmation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:customer/util/foods.dart';
 import 'package:customer/widgets/cart_item.dart';
+import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 
 class Checkout extends StatefulWidget {
@@ -21,12 +26,22 @@ class Checkout extends StatefulWidget {
       required this.user,
       required this.shopInfo,
       required this.basket,
-      required this.updateBasket});
+      required this.updateBasket,
+      required this.setOrderListener});
 
   final User user;
   final ShopInfo shopInfo;
   final Basket basket;
-  final void Function(String, {Item? item, String mode}) updateBasket;
+  final void Function(
+      {required String ownerUID,
+      required String shopName,
+      Item? item,
+      String mode}) updateBasket;
+  final void Function(
+      {required Stream<DatabaseEvent> orderListener,
+      required String ownerUID,
+      required String shopName,
+      required int orderId}) setOrderListener;
 
   @override
   _CheckoutState createState() => _CheckoutState();
@@ -86,7 +101,7 @@ class _CheckoutState extends State<Checkout> {
               itemBuilder: (BuildContext context, int index) {
                 ItemCounter itemCounter = widget.basket.itemList[index];
                 return CartItem(
-                  shopName: widget.shopInfo.name,
+                  shopInfo: widget.shopInfo,
                   itemCounter: itemCounter,
                   isFav: false,
                   updateBasket: widget.updateBasket,
@@ -108,7 +123,7 @@ class _CheckoutState extends State<Checkout> {
                 title: Text(paymentMethod),
                 subtitle: paymentMethod == Payment.mobileBanking
                     ? const Text(
-                        "5506 7744 8610 9638",
+                        "... Bank",
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w900,
@@ -121,7 +136,7 @@ class _CheckoutState extends State<Checkout> {
                       : paymentMethod == Payment.promptpay
                           ? FontAwesomeIcons.qrcode
                           : FontAwesomeIcons.bank,
-                  size: 50.0,
+                  size: screenSize.width * 0.125,
                   color: Theme.of(context).accentColor,
                 ),
                 trailing: IconButton(
@@ -147,50 +162,6 @@ class _CheckoutState extends State<Checkout> {
           child: ListView(
             physics: const NeverScrollableScrollPhysics(),
             children: <Widget>[
-              // Coupon
-              /* Padding(
-                padding: const EdgeInsets.all(10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: const BorderRadius.all(
-                      Radius.circular(5.0),
-                    ),
-                  ),
-                  child: TextField(
-                    style: const TextStyle(
-                      fontSize: 15.0,
-                      color: Colors.black,
-                    ),
-                    decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.all(10.0),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(5.0),
-                        borderSide: BorderSide(
-                          color: Colors.grey.shade200,
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(
-                          color: Colors.grey.shade200,
-                        ),
-                        borderRadius: BorderRadius.circular(5.0),
-                      ),
-                      hintText: "Coupon Code",
-                      prefixIcon: Icon(
-                        Icons.redeem,
-                        color: Theme.of(context).accentColor,
-                      ),
-                      hintStyle: const TextStyle(
-                        fontSize: 15.0,
-                        color: Colors.black,
-                      ),
-                    ),
-                    maxLines: 1,
-                    controller: _couponlControl,
-                  ),
-                ),
-              ), */
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: <Widget>[
@@ -214,13 +185,6 @@ class _CheckoutState extends State<Checkout> {
                             color: Theme.of(context).accentColor,
                           ),
                         ),
-                        const Text(
-                          "Delivery charges included",
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -239,28 +203,68 @@ class _CheckoutState extends State<Checkout> {
                         confirmation(context,
                             onYes: () {
                               Navigator.of(context).pop();
+                              showDialog(
+                                  context: context,
+                                  builder: (context) {
+                                    return Center(
+                                      child: Lottie.asset(
+                                          'assets/animations/colors-circle-loader.json'),
+                                    );
+                                  });
+                              DateTime dateTime = DateTime.now().toUtc();
                               Order order = Order(
-                                  widget.user.uid,
-                                  widget.shopInfo.name,
-                                  widget.shopInfo.phoneNumber,
-                                  widget.basket.itemList,
-                                  widget.basket.cost,
-                                  DateTime.now());
-                              print(order.toJsonEncoded());
+                                  uid: widget.user.uid,
+                                  ownerUID: widget.shopInfo.ownerUID,
+                                  shopName: widget.shopInfo.name,
+                                  phoneNumber: widget.shopInfo.phoneNumber,
+                                  itemList: widget.basket.itemList,
+                                  cost: widget.basket.cost,
+                                  date: dateTime);
                               api.addOrder(order).then((res) {
-                                print('addOrder Result: ${res.body}');
+                                Map<String, dynamic> resBody =
+                                    json.decode(res.body);
+                                int orderId = resBody['orderId'];
+
+                                String path =
+                                    'Order/${widget.shopInfo.ownerUID}-${widget.shopInfo.name}/${dateTime.year}/${dateTime.month}/${dateTime.day}';
+                                print('after add: $path');
+                                var ref = FirebaseDatabase.instance.ref(path);
+                                Stream<DatabaseEvent> orderListener =
+                                    ref.onValue;
+                                widget.setOrderListener(
+                                    orderListener: orderListener,
+                                    ownerUID: widget.shopInfo.ownerUID,
+                                    shopName: widget.shopInfo.name,
+                                    orderId: orderId);
+                                if (res.statusCode == 200) {
+                                  try {
+                                    String topic =
+                                        json.decode(res.body)['orderTopic'];
+                                    print('topic: $topic');
+                                    FirebaseMessaging.instance
+                                        .subscribeToTopic(topic)
+                                        .whenComplete(
+                                            () => print('subscribed'));
+                                  } catch (_) {
+                                    print(_);
+                                  }
+                                }
+                                order.orderId = resBody['orderId'];
                                 Provider.of<AppProvider>(context, listen: false)
                                     .clearBasket();
+                                widget.updateBasket(
+                                    ownerUID: widget.shopInfo.ownerUID,
+                                    shopName: widget.shopInfo.name,
+                                    mode: 'clear');
+                                Navigator.of(context).pop();
+                                Navigator.of(context).push(
+                                    MaterialPageRoute(builder: ((context) {
+                                  return OrderStatusScreen(
+                                    shopInfo: widget.shopInfo,
+                                    order: order,
+                                  );
+                                })));
                               });
-                              widget.updateBasket(widget.shopInfo.name,
-                                  mode: 'clear');
-                              Navigator.of(context)
-                                  .push(MaterialPageRoute(builder: ((context) {
-                                return OrderStatusScreen(
-                                  shopInfo: widget.shopInfo,
-                                  order: order,
-                                );
-                              })));
                             },
                             onNo: () => Navigator.of(context).pop(),
                             title: const Text('Order Confirmation'),

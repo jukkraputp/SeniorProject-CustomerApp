@@ -3,10 +3,12 @@ import 'package:customer/apis/api.dart';
 import 'package:customer/interfaces/basket.dart';
 import 'package:customer/interfaces/item.dart';
 import 'package:customer/interfaces/menu_list.dart';
+import 'package:customer/interfaces/order.dart';
 import 'package:customer/interfaces/shop_info.dart';
 import 'package:customer/providers/app_provider.dart';
 import 'package:customer/screens/cart.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/src/widgets/container.dart';
 import 'package:flutter/src/widgets/framework.dart';
@@ -23,15 +25,27 @@ class Shop extends StatefulWidget {
       required this.updateBasket,
       this.needDownload = false,
       this.shopMenu,
-      this.saveMenuData});
+      this.saveMenuData,
+      required this.setOrderListener,
+      required this.allQueue});
 
   final User user;
   final ShopInfo shopInfo;
   final Basket basket;
-  final void Function(String, {Item? item, String mode}) updateBasket;
+  final void Function(
+      {required String ownerUID,
+      required String shopName,
+      Item? item,
+      String mode}) updateBasket;
   final bool needDownload;
   final MenuList? shopMenu;
-  final void Function(String, MenuList)? saveMenuData;
+  final void Function(ShopInfo, MenuList)? saveMenuData;
+  final void Function(
+      {required Stream<DatabaseEvent> orderListener,
+      required String ownerUID,
+      required String shopName,
+      required int orderId}) setOrderListener;
+  final Map<String, OrderQueue> allQueue;
 
   @override
   State<Shop> createState() => _ShopState();
@@ -46,14 +60,19 @@ class _ShopState extends State<Shop> {
   List<Widget> _menuTypeButtons = [];
   bool _ready = false;
   late MenuList shopMenu;
+  num _waitingTime = 0;
 
   @override
   void initState() {
     super.initState();
     if (widget.needDownload) {
-      api.getMenuList(widget.shopInfo.name).then((value) {
+      api
+          .getShopMenu(
+              ownerUID: widget.shopInfo.ownerUID,
+              shopName: widget.shopInfo.name)
+          .then((value) {
         if (widget.saveMenuData != null) {
-          widget.saveMenuData!(widget.shopInfo.name, value);
+          widget.saveMenuData!(widget.shopInfo, value);
         }
         setState(() {
           _selectedType = value.menu.keys.toList().first;
@@ -68,12 +87,26 @@ class _ShopState extends State<Shop> {
         _selectedType = widget.shopMenu!.menu.keys.toList().first;
       });
     }
+    String shopKey = '${widget.shopInfo.ownerUID}-${widget.shopInfo.name}';
+    for (var key in widget.allQueue.keys) {
+      if (key.contains(shopKey)) {
+        int orderId = int.parse(key.split('-').last.split('order').last);
+        OrderQueue queue = widget.allQueue[key]!;
+        setState(() {
+          _waitingTime += queue.time;
+        });
+      }
+    }
   }
 
-  void updateBasket(String shopName, {Item? item, String mode = '+'}) {
-    print('Shop: $mode');
+  void updateBasket(
+      {required String ownerUID,
+      required String shopName,
+      Item? item,
+      String mode = '+'}) {
     setState(() {
-      widget.updateBasket(shopName, item: item, mode: mode);
+      widget.updateBasket(
+          ownerUID: ownerUID, shopName: shopName, item: item, mode: mode);
     });
   }
 
@@ -81,7 +114,6 @@ class _ShopState extends State<Shop> {
     double imgSize = 75;
     Size screenSize = MediaQuery.of(context).size;
     late ListView widgets;
-    print('shop ready: $_ready');
     if (menuList.menu.containsKey(_selectedType)) {
       widgets = ListView.builder(
           itemCount: menuList.menu[_selectedType]!.length,
@@ -91,9 +123,12 @@ class _ShopState extends State<Shop> {
                     const EdgeInsets.only(left: 5, top: 5, bottom: 5, right: 5),
                 child: TextButton(
                   onPressed: () {
+                    Item item = menuList.menu[_selectedType]![index];
                     setState(() {
-                      widget.updateBasket(widget.shopInfo.name,
-                          item: menuList.menu[_selectedType]?[index]);
+                      widget.updateBasket(
+                          ownerUID: widget.shopInfo.ownerUID,
+                          shopName: widget.shopInfo.name,
+                          item: item);
                       rebuildWidgets(
                           _selectedType!, menuList.menu.keys.toList());
                     });
@@ -118,9 +153,14 @@ class _ShopState extends State<Shop> {
                         Text(
                           menuList.menu[_selectedType]![index].name,
                           textAlign: TextAlign.center,
+                          style:
+                              TextStyle(color: Theme.of(context).primaryColor),
                         ),
                         Text(
-                            '${menuList.menu[_selectedType]![index].price}     ')
+                          '${menuList.menu[_selectedType]![index].price}',
+                          style:
+                              TextStyle(color: Theme.of(context).primaryColor),
+                        )
                       ]),
                 ));
           }));
@@ -142,15 +182,18 @@ class _ShopState extends State<Shop> {
               onPressed: () => rebuildWidgets(foodType, types),
               style: ButtonStyle(
                 backgroundColor: _selectedType == foodType
-                    ? MaterialStateProperty.all(Colors.black)
-                    : MaterialStateProperty.all(Colors.grey.shade400),
+                    ? MaterialStateProperty.all(Theme.of(context).primaryColor)
+                    : MaterialStateProperty.all(Theme.of(context)
+                        .colorScheme
+                        .secondary
+                        .withOpacity(0.5)),
               ),
               child: Text(
                 foodType,
                 style: TextStyle(
                     color: _selectedType == foodType
-                        ? Colors.white
-                        : Colors.black),
+                        ? Theme.of(context).colorScheme.secondary
+                        : Theme.of(context).primaryColor),
               ))));
     }
 
@@ -169,9 +212,8 @@ class _ShopState extends State<Shop> {
   @override
   Widget build(BuildContext context) {
     ThemeData theme = Provider.of<AppProvider>(context, listen: false).theme;
+    Size screenSize = MediaQuery.of(context).size;
     double iconSize = 24;
-    print('shop: $_selectedType');
-    print('basket: ${widget.basket}');
     if (widget.shopMenu != null) {
       setState(() {
         _menuTypeButtons =
@@ -181,90 +223,40 @@ class _ShopState extends State<Shop> {
     }
     return Scaffold(
       key: _key,
-      /* endDrawer: Drawer(
-        // Add a ListView to the drawer. This ensures the user can scroll
-        // through the options in the drawer if there isn't enough vertical
-        // space to fit everything.
-        child: ListView(
-          // Important: Remove any padding from the ListView.
-          padding: EdgeInsets.zero,
-          children: [
-            SizedBox(
-              height: MediaQuery.of(context).size.height / 5,
-              child: DrawerHeader(
-                decoration: const BoxDecoration(
-                  color: Colors.blue,
-                ),
-                child: Text(
-                  widget.shopName,
-                  style: const TextStyle(fontSize: 48),
-                ),
-              ),
-            ),
-            ListTile(
-              onTap: () {
-                /* setState(() {
-                  _editing = true;
-                }); */
-              },
-              leading: Icon(
-                Icons.edit,
-                size: iconSize,
-              ),
-              title: const Text(
-                'Edit',
-                style: TextStyle(fontSize: 20),
-              ),
-            ),
-            ListTile(
-              onTap: () {},
-              leading: Icon(
-                Icons.receipt,
-                size: iconSize,
-              ),
-              title: const Text(
-                'shop',
-                style: TextStyle(fontSize: 20),
-              ),
-            ),
-            ListTile(
-              onTap: () {},
-              leading: Icon(
-                Icons.food_bank,
-                size: iconSize,
-              ),
-              title: const Text(
-                '',
-                style: TextStyle(fontSize: 20),
-              ),
-            ),
-          ],
-        ),
-      ), */
       appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.keyboard_backspace,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        centerTitle: true,
-        title: Text(
-          widget.shopInfo.name,
-        ),
-        /* actions: <Widget>[
-          IconButton(
-            icon: Icon(
-              Icons.menu,
-              size: iconSize,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.keyboard_backspace,
             ),
-            onPressed: () => _key.currentState!.openEndDrawer(),
-            tooltip: "Menu",
+            onPressed: () => Navigator.pop(context),
           ),
-        ], */
-      ),
-      body: (_selectedType != null) & _ready
+          centerTitle: true,
+          title: Text(
+            'ร้าน ${widget.shopInfo.name}',
+          ),
+          actions: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Center(
+                  child: Text(
+                'เวลารอก่อนถึงคิว\n ${_waitingTime.toInt()} นาที',
+                textAlign: TextAlign.center,
+              )),
+            )
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(50),
+            child: Container(
+                decoration: BoxDecoration(
+                    border: const Border(top: BorderSide(width: 0)),
+                    color: Theme.of(context).backgroundColor),
+                height: 50,
+                child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: _menuTypeButtons)),
+          )),
+      body: ((_selectedType != null) & _ready)
           ? Stack(
               children: <Widget>[
                 _body,
@@ -283,8 +275,10 @@ class _ShopState extends State<Shop> {
                             color: Colors.white,
                             size: 15,
                           ),
-                          onPressed: () =>
-                              updateBasket(widget.shopInfo.name, mode: 'clear'),
+                          onPressed: () => updateBasket(
+                              ownerUID: widget.shopInfo.ownerUID,
+                              shopName: widget.shopInfo.name,
+                              mode: 'clear'),
                         ),
                         child: ElevatedButton(
                           onPressed: () => Navigator.of(context).push(
@@ -293,12 +287,15 @@ class _ShopState extends State<Shop> {
                                 return Scaffold(
                                   appBar: AppBar(
                                     automaticallyImplyLeading: false,
-                                    leading: IconButton(
-                                      icon: const Icon(
-                                        Icons.keyboard_backspace,
-                                      ),
-                                      onPressed: () => Navigator.pop(context),
-                                    ),
+                                    leading: _ready
+                                        ? IconButton(
+                                            icon: const Icon(
+                                              Icons.keyboard_backspace,
+                                            ),
+                                            onPressed: () =>
+                                                Navigator.pop(context),
+                                          )
+                                        : null,
                                     centerTitle: true,
                                     title: const Text('My Order'),
                                   ),
@@ -307,6 +304,7 @@ class _ShopState extends State<Shop> {
                                     shopInfo: widget.shopInfo,
                                     basket: widget.basket,
                                     updateBasket: updateBasket,
+                                    setOrderListener: widget.setOrderListener,
                                   ),
                                 );
                               },
@@ -344,14 +342,6 @@ class _ShopState extends State<Shop> {
               child:
                   Lottie.asset('assets/animations/colors-circle-loader.json'),
             ),
-      bottomNavigationBar: BottomAppBar(
-        color: Theme.of(context).primaryColor,
-        shape: const CircularNotchedRectangle(),
-        child: SizedBox(
-            height: 50,
-            child: ListView(
-                scrollDirection: Axis.horizontal, children: _menuTypeButtons)),
-      ),
     );
   }
 }

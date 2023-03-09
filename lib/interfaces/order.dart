@@ -1,11 +1,10 @@
 import 'dart:convert';
-
-import 'package:customer/interfaces/basket.dart';
 import 'package:customer/interfaces/item.dart';
 
 class Order {
   String uid;
-  String? orderId;
+  int? orderId;
+  String ownerUID;
   String shopName;
   String phoneNumber;
   List<ItemCounter> itemList;
@@ -14,35 +13,57 @@ class Order {
   bool isCompleted;
   bool isFinished;
   bool isPaid;
+  String? paymentImage;
 
-  Order(this.uid, this.shopName, this.phoneNumber, this.itemList, this.cost,
-      this.date,
-      {this.isCompleted = false, this.isFinished = false, this.isPaid = false});
+  Order(
+      {required this.uid,
+      required this.ownerUID,
+      required this.shopName,
+      required this.phoneNumber,
+      required this.itemList,
+      required this.cost,
+      required this.date,
+      this.isCompleted = false,
+      this.isFinished = false,
+      this.isPaid = false,
+      this.orderId,
+      this.paymentImage});
 
-  String toJsonEncoded() {
+  String toJsonEncoded({Map<String, dynamic>? args}) {
     List<Map<String, dynamic>> itemList = [];
+    double totalTime = 0;
     for (var itemCounter in this.itemList) {
       itemList.add({
         'name': itemCounter.item.name,
         'price': itemCounter.item.price,
+        'time': itemCounter.item.time,
         'id': itemCounter.item.id,
         'image': itemCounter.item.image,
         'count': itemCounter.count
       });
+      totalTime += itemCounter.item.time;
     }
     Map<String, dynamic> obj = {
       'uid': uid,
+      'ownerUID': ownerUID,
       'shopName': shopName,
-      'phoneNumber': phoneNumber,
+      'shopPhoneNumber': phoneNumber,
       'itemList': itemList,
       'cost': cost,
+      'totalTime': totalTime,
       'date': date.toIso8601String(),
       'isCompleted': isCompleted,
       'isFinished': isFinished,
-      'isPaid': isPaid
+      'isPaid': isPaid,
     };
+    if (args != null) {
+      obj.addAll(args);
+    }
     if (orderId != null) {
       obj['orderId'] = orderId;
+    }
+    if (paymentImage != null) {
+      obj['paymentImage'] = paymentImage;
     }
     return json.encode(obj);
   }
@@ -76,4 +97,11 @@ class FilteredOrders {
     }
     return res;
   }
+}
+
+class OrderQueue {
+  int currentOrder;
+  num time;
+
+  OrderQueue({required this.currentOrder, required this.time});
 }

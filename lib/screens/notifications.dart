@@ -1,82 +1,80 @@
+import 'dart:convert';
+
+import 'package:customer/interfaces/order.dart';
+import 'package:customer/providers/app_provider.dart';
+import 'package:customer/screens/all_order.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
 
 class Notifications extends StatefulWidget {
+  const Notifications(
+      {super.key,
+      required this.allOrders,
+      required this.notiList,
+      required this.goTo});
+
+  final FilteredOrders allOrders;
+  final List<String> notiList;
+  final void Function(int, {Map<String, dynamic>? option}) goTo;
+
   @override
   _NotificationsState createState() => _NotificationsState();
 }
 
 class _NotificationsState extends State<Notifications> {
   @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    print('noti: ${widget.notiList}');
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          icon: Icon(
-            Icons.keyboard_backspace,
-          ),
-          onPressed: ()=>Navigator.pop(context),
-        ),
         centerTitle: true,
-        title: Text(
+        title: const Text(
           "Notifications",
         ),
         elevation: 0.0,
       ),
-
       body: Padding(
-        padding: EdgeInsets.fromLTRB(10.0,0,10.0,0),
-        child: ListView(
-          children: <Widget>[
-            ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.green,
-                child: Icon(
-                  Icons.check,
-                  color: Colors.white,
-                ),
-              ),
-              title: Text("Your Order has been delivered successfully"),
-              onTap: (){},
-            ),
-            Divider(),
-            ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.red,
-                child: Icon(
-                  Icons.clear,
-                  color: Colors.white,
-                ),
-              ),
-              title: Text("Error processing your order"),
-              onTap: (){},
-            ),
-            Divider(),
-            ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.orange,
-                child: Icon(
-                  Icons.directions_bike,
-                  color: Colors.white,
-                ),
-              ),
-              title: Text("You order has been processed and will be delivered shortly"),
-              onTap: (){},
-            ),
-            Divider(),
-            ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.blue,
-                child: Icon(
-                  Icons.email,
-                  color: Colors.white,
-                ),
-              ),
-              title: Text("Please Verify your email address"),
-              onTap: (){},
-            ),
-          ],
-        ),
+        padding: const EdgeInsets.fromLTRB(10.0, 10, 10.0, 0),
+        child: ListView.builder(
+            itemCount: widget.notiList.length,
+            itemBuilder: ((context, index) {
+              Map<String, dynamic> obj =
+                  json.decode(json.decode(widget.notiList[index]));
+              String shopName = obj['shopName'];
+              int orderId = obj['orderId'];
+              return Column(
+                children: <Widget>[
+                  ListTile(
+                    onTap: () async {
+                      String noti = json
+                          .encode({"orderId": orderId, "shopName": shopName});
+                      widget.goTo(2,
+                          option: {'order-tab': 'Ready', 'noti': noti});
+                      Navigator.of(context).pop();
+                    },
+                    leading: const Icon(
+                      FontAwesomeIcons.burger,
+                      size: 50,
+                      color: Colors.amber,
+                    ),
+                    title: Text('$shopName - Order #$orderId'),
+                    subtitle: const Text('Your order has been ready!'),
+                    trailing: const Icon(
+                      Icons.check_circle,
+                      size: 50,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const Divider()
+                ],
+              );
+            })),
       ),
     );
   }

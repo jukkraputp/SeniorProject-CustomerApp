@@ -74,28 +74,28 @@ class AppProvider extends ChangeNotifier {
     Map<String, Basket> basket = {};
     List<String>? shopList =
         prefs.getStringList(PrefsKey.basketShopList(user.email));
-    print('shopList: $shopList');
     if (shopList != null) {
       for (String shopName in shopList) {
         List<ItemCounter> itemList = [];
         List<String>? idList =
             prefs.getStringList(PrefsKey.basketIdList(shopName));
-        print('idList: $idList');
         if (idList != null) {
           for (String itemId in idList) {
             String? itemString =
                 prefs.getString(PrefsKey.basketItemList(shopName).item(itemId));
             if (itemString != null) {
-              print('itemString: $itemString');
               dynamic obj = json.decode(itemString);
               Item item = Item(
-                  obj['name'], obj['price'], obj['image'], obj['id'],
+                  name: obj['name'],
+                  price: obj['price'],
+                  time: obj['time'],
+                  image: obj['image'],
+                  id: obj['id'],
                   bytes: obj['bytes'],
                   rating: obj['rating'],
                   rater: obj['rater']);
               int? count =
                   prefs.getInt(PrefsKey.basketItemList(shopName).count(itemId));
-              print(count);
               if (count != null) {
                 ItemCounter itemCounter = ItemCounter(item, count);
                 itemList.add(itemCounter);
@@ -129,7 +129,6 @@ class AppProvider extends ChangeNotifier {
   Future<String> checkPaymentMethod() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String method = prefs.getString(PrefsKey.paymentMethod) ?? Payment.cash;
-    print('checkPaymentMethod: $method');
     setPaymentMethod(method);
     return method;
   }
@@ -138,16 +137,58 @@ class AppProvider extends ChangeNotifier {
     return paymentMethod;
   }
 
-  void setPaymentMethod(String method) {
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString(PrefsKey.paymentMethod, method).then((value) {
-        String? currentMethod = prefs.getString(PrefsKey.paymentMethod);
-        print('setPaymentMethod: $currentMethod');
-      });
+  Future<void> setPaymentMethod(String method) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setString(PrefsKey.paymentMethod, method).whenComplete(() {
+      String? currentMethod = prefs.getString(PrefsKey.paymentMethod);
     });
   }
 
-  Future<String> checkOrder() async {
-    return '';
+  Future<void> setNotiStatus(bool status) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notiStatus', status);
+  }
+
+  Future<bool> getNotiStatus() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool notiStatus = prefs.getBool('notiStatus') ?? false;
+    return notiStatus;
+  }
+
+  Future<void> setNotiList(List<String> notiList) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('notiList', notiList);
+  }
+
+  Future<List<String>> getNotiList() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String> notiList = prefs.getStringList('notiList') ?? [];
+    return notiList;
+  }
+
+  Future<bool> removeNoti(String noti) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String> notiList = prefs.getStringList('notiList') ?? [];
+    notiList.remove(noti);
+    return await prefs.setStringList('notiList', notiList);
+  }
+
+  Future<void> clearNotiList() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('notiList', []);
+  }
+
+  Future<bool> addOrderTopic(String shopName, String orderTopic) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String> orderTopicList =
+        prefs.getStringList('$shopName-orderTopicList') ?? [];
+    orderTopicList.add(orderTopic);
+    return await prefs.setStringList(
+        '$shopName-orderTopicList', orderTopicList);
+  }
+
+  Future<List<String>> getOrderTopicList(String shopName) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList('$shopName-orderTopicList') ?? [];
   }
 }

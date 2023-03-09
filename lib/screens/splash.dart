@@ -1,13 +1,15 @@
 import 'dart:async';
+import 'package:customer/main.dart';
 import 'package:customer/screens/join.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:customer/util/const.dart';
 
 class SplashScreen extends StatefulWidget {
-  SplashScreen({super.key, required this.debug});
+  const SplashScreen({super.key, required this.debug, this.bgMessageData});
 
-  bool debug;
+  final bool debug;
+  final Map<String, dynamic>? bgMessageData;
 
   @override
   _SplashScreenState createState() => _SplashScreenState();
@@ -22,7 +24,9 @@ class _SplashScreenState extends State<SplashScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
           builder: (BuildContext context) {
-            return const JoinApp();
+            return JoinApp(
+              bgMessageData: widget.bgMessageData,
+            );
           },
           settings: const RouteSettings(name: 'JoinApp')),
     );

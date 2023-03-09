@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:customer/screens/details.dart';
 import 'package:customer/util/const.dart';
 import 'package:customer/widgets/smooth_star_rating.dart';
 

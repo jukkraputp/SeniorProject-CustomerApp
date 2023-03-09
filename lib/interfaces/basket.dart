@@ -20,10 +20,10 @@ class Basket {
 
   void addItem(Item newItem) {
     for (var item in itemList) {
-      if (item.item.name == newItem.name) {
+      if (item.item.id == newItem.id) {
         item.count += 1;
         try {
-          cost += double.parse(newItem.price);
+          cost += newItem.price;
         } catch (e) {
           print(e);
         }
@@ -34,7 +34,7 @@ class Basket {
     }
     itemList.add(ItemCounter(newItem, 1));
     try {
-      cost += double.parse(newItem.price);
+      cost += newItem.price;
     } catch (e) {
       print(e);
     }
@@ -43,13 +43,13 @@ class Basket {
 
   void removeItem(Item targetItem, {int amount = 1}) {
     for (var item in itemList) {
-      if (item.item.name == targetItem.name) {
+      if (item.item.id == targetItem.id) {
         item.count -= amount;
         if (item.count <= 0) {
           itemList.remove(item);
         }
         try {
-          cost -= double.parse(targetItem.price);
+          cost -= targetItem.price;
         } catch (e) {
           print(e);
         }

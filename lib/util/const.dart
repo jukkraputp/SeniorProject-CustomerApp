@@ -7,10 +7,10 @@ class Constants {
 
   //Colors for theme
 //  Color(0xfffcfcff);
-  static Color lightPrimary = const Color(0xfffcfcff);
-  static Color darkPrimary = Colors.black;
-  static Color lightAccent = Colors.red;
-  static Color darkAccent = Colors.red.shade400;
+  static Color lightPrimary = Colors.black87;
+  static Color darkPrimary = Colors.white;
+  static Color lightAccent = Colors.blueAccent;
+  static Color darkAccent = Colors.deepPurpleAccent;
   static Color lightBG = const Color(0xfffcfcff);
   static Color darkBG = Colors.black;
   static Color ratingBG = Colors.yellow.shade600;
@@ -20,6 +20,7 @@ class Constants {
     primaryColor: lightPrimary,
     scaffoldBackgroundColor: lightBG,
     appBarTheme: AppBarTheme(
+      backgroundColor: lightAccent,
       toolbarTextStyle: TextTheme(
         titleMedium: TextStyle(
           color: darkBG,
@@ -48,9 +49,10 @@ class Constants {
     primaryColor: darkPrimary,
     scaffoldBackgroundColor: darkBG,
     appBarTheme: AppBarTheme(
+      backgroundColor: darkAccent,
       toolbarTextStyle: TextTheme(
         titleMedium: TextStyle(
-          color: lightBG,
+          color: darkPrimary,
           fontSize: 18.0,
           fontWeight: FontWeight.w800,
         ),

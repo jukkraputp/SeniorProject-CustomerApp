@@ -195,12 +195,31 @@ class _LoginScreenState extends State<LoginScreen> {
                   username = _usernameControl.text;
                   password = _passwordControl.text;
                 }
+
                 widget
                     .login(username: username, password: password, uid: uid)
                     .then((value) {
-                  setState(() {
-                    _loggedIn = true;
-                  });
+                  if (value == null) {
+                    showDialog(
+                        context: context,
+                        builder: ((context) {
+                          return AlertDialog(
+                            title: const Text('Wrong username or password'),
+                            actions: <Widget>[
+                              TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text('Close'))
+                            ],
+                          );
+                        }));
+                    setState(() {
+                      _loggedIn = false;
+                    });
+                  } else {
+                    setState(() {
+                      _loggedIn = true;
+                    });
+                  }
                 });
                 /* User? user = FirebaseAuth.instance.currentUser;
                 if (user != null) {

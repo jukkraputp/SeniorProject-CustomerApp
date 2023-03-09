@@ -1,28 +1,34 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:customer/interfaces/basket.dart';
 import 'package:customer/interfaces/item.dart';
-import 'package:flutter/foundation.dart';
+import 'package:customer/interfaces/shop_info.dart';
 import 'package:flutter/material.dart';
-import 'package:customer/screens/details.dart';
 import 'package:customer/util/const.dart';
 import 'package:customer/widgets/smooth_star_rating.dart';
 
 class CartItem extends StatelessWidget {
-  final String shopName;
+  final ShopInfo shopInfo;
   ItemCounter itemCounter;
   final bool isFav;
-  final void Function(String, {Item? item, String mode}) updateBasket;
+  final void Function(
+      {required String ownerUID,
+      required String shopName,
+      Item? item,
+      String mode}) updateBasket;
   final bool adjustButtons;
 
   CartItem(
       {super.key,
-      required this.shopName,
+      required this.shopInfo,
       required this.itemCounter,
       required this.isFav,
       this.updateBasket = dummyFunction,
       this.adjustButtons = true});
 
-  static void dummyFunction(String shopName, {Item? item, String mode = '+'}) {}
+  static void dummyFunction(
+      {required String ownerUID,
+      required String shopName,
+      Item? item,
+      String mode = '+'}) {}
 
   // feature
   final bool foodOptions = false;
@@ -36,7 +42,7 @@ class CartItem extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
       child: InkWell(
         onTap: () {
-          if (foodOptions) {
+          /* if (foodOptions) {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (BuildContext context) {
@@ -47,7 +53,7 @@ class CartItem extends StatelessWidget {
                 },
               ),
             );
-          }
+          } */
         },
         child: Row(
           children: <Widget>[
@@ -79,18 +85,26 @@ class CartItem extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        item.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
+                      SizedBox(
+                        width: screenSize.width * 0.2,
+                        child: Text(
+                          item.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                          overflow: TextOverflow.clip,
                         ),
                       ),
+                      // adjustment buttons
                       Row(
                         children: <Widget>[
                           if (adjustButtons)
                             IconButton(
-                                onPressed: () => updateBasket(shopName,
-                                    item: item, mode: '-'),
+                                onPressed: () => updateBasket(
+                                    ownerUID: shopInfo.ownerUID,
+                                    shopName: shopInfo.name,
+                                    item: item,
+                                    mode: '-'),
                                 color: Colors.black,
                                 icon: const Icon(Icons.remove_circle)),
                           Text(
@@ -101,8 +115,11 @@ class CartItem extends StatelessWidget {
                           ),
                           if (adjustButtons)
                             IconButton(
-                                onPressed: () => updateBasket(shopName,
-                                    item: item, mode: '+'),
+                                onPressed: () => updateBasket(
+                                    ownerUID: shopInfo.ownerUID,
+                                    shopName: shopInfo.name,
+                                    item: item,
+                                    mode: '+'),
                                 color: Colors.black,
                                 icon: const Icon(Icons.add_circle))
                         ],
@@ -144,7 +161,7 @@ class CartItem extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        "฿ ${double.parse(item.price) * itemCounter.count}",
+                        "฿ ${item.price * itemCounter.count}",
                         style: const TextStyle(
                           fontSize: 14.0,
                           fontWeight: FontWeight.w900,
@@ -154,7 +171,7 @@ class CartItem extends StatelessWidget {
                   ),
                 )
               ],
-            ),
+            )
           ],
         ),
       ),

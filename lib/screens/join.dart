@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:customer/interfaces/register.dart';
+import 'package:customer/main.dart';
+import 'package:customer/util/const.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:customer/apis/api.dart';
@@ -14,7 +18,9 @@ import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class JoinApp extends StatefulWidget {
-  const JoinApp({super.key});
+  const JoinApp({super.key, this.bgMessageData});
+
+  final Map<String, dynamic>? bgMessageData;
 
   @override
   _JoinAppState createState() => _JoinAppState();
@@ -147,6 +153,7 @@ class _JoinAppState extends State<JoinApp> with SingleTickerProviderStateMixin {
                     builder: (BuildContext context) {
                       return MainScreen(
                         user: _user!,
+                        bgMessageData: widget.bgMessageData,
                       );
                     },
                     settings: const RouteSettings(name: 'MainScreen')),
@@ -154,26 +161,59 @@ class _JoinAppState extends State<JoinApp> with SingleTickerProviderStateMixin {
     }
   }
 
-  Future<bool> register(String username, String password) async {
+  Future<RegisterResult> register(
+      {String? username,
+      String? email,
+      String? password,
+      String? phoneNumber}) async {
+    if (username == null ||
+        email == null ||
+        password == null ||
+        phoneNumber == null) return RegisterResult();
+    print('registering');
     try {
-      final credential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: '$username@gmail.com',
-        password: password,
-      );
+      var res = await api.register(
+          username: username,
+          email: email,
+          password: password,
+          phoneNumber: phoneNumber);
+      Map<String, dynamic> resBody = json.decode(res.body);
+      if (!resBody['status']) {
+        bool _stop = false;
+        showDialog(
+            context: context,
+            builder: ((context) {
+              return AlertDialog(
+                title: const Text('Registration Error'),
+                content: Text(resBody['message']),
+                actions: <Widget>[
+                  TextButton(
+                      onPressed: () => Navigator.of(context).popUntil((route) {
+                            if (route.settings.name == 'Loader') {
+                              _stop = true;
+                              return false;
+                            }
+                            return _stop;
+                          }),
+                      child: const Text('Close'))
+                ],
+              );
+            }));
+      }
+      print(resBody);
     } on FirebaseAuthException catch (e) {
       if (e.code == 'weak-password') {
         print('The password provided is too weak.');
       } else if (e.code == 'email-already-in-use') {
         print('The account already exists for that email.');
       }
-      return false;
+      return RegisterResult(success: false, message: e.code);
     } catch (e) {
       print(e);
-      return false;
+      return RegisterResult(success: false, message: e.toString());
     }
-    await login(username: username, password: password);
-    return true;
+    User? user = await login(username: username, password: password);
+    return RegisterResult(success: true);
   }
 
   /// Used to trigger an event when the widget has been built
@@ -238,19 +278,21 @@ class _JoinAppState extends State<JoinApp> with SingleTickerProviderStateMixin {
         child: Scaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.keyboard_backspace,
-              ),
-              onPressed: () => Navigator.pop(context),
-            ),
+            title: Center(
+                child: Text(
+              Constants.appName,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Theme.of(context).textSelectionTheme.selectionColor),
+            )),
             bottom: _loggedIn
                 ? null
                 : TabBar(
                     controller: _tabController,
-                    indicatorColor: Theme.of(context).colorScheme.secondary,
-                    labelColor: Theme.of(context).colorScheme.secondary,
-                    unselectedLabelColor: Colors.white,
+                    indicatorColor: Theme.of(context).primaryColor,
+                    labelColor: Theme.of(context).primaryColor,
+                    unselectedLabelColor:
+                        Theme.of(context).secondaryHeaderColor,
                     labelStyle: const TextStyle(
                       fontSize: 20.0,
                       fontWeight: FontWeight.w800,
@@ -281,10 +323,8 @@ class _JoinAppState extends State<JoinApp> with SingleTickerProviderStateMixin {
                       signInWithFacebook: signInWithFacebook,
                     ),
                     RegisterScreen(
-                      user: _user,
-                      login: login,
-                      signInWithGoogle: signInWithGoogle,
-                      signInWithFacebook: signInWithFacebook,
+                      auth: _auth,
+                      register: register,
                     ),
                   ],
                 ),

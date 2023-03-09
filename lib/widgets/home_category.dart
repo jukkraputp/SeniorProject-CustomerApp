@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:customer/screens/categories_screen.dart';
 
 class HomeCategory extends StatefulWidget {
   final IconData icon;
@@ -27,13 +26,13 @@ class _HomeCategoryState extends State<HomeCategory> {
     return InkWell(
       onTap: () => widget.isHome
           ? () {
-              Navigator.of(context).push(
+              /* Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (BuildContext context) {
                     return CategoriesScreen();
                   },
                 ),
-              );
+              ); */
             }
           : widget.tap,
       child: Card(

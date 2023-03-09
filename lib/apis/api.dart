@@ -1,13 +1,14 @@
 import 'dart:convert';
+import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart' as CloudFS;
-import 'package:customer/interfaces/order.dart' as FoodOrder;
+import 'package:cloud_firestore/cloud_firestore.dart' as cloud_fs;
+import 'package:customer/interfaces/order.dart' as food_order;
 import 'package:customer/interfaces/register.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
-import 'package:customer/interfaces/omise.dart';
 import 'package:customer/interfaces/shop_info.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -15,126 +16,221 @@ import 'package:customer/interfaces/history.dart';
 import 'package:customer/interfaces/item.dart';
 import 'package:customer/interfaces/menu_list.dart';
 import 'package:http/http.dart' as http;
-import 'package:customer/interfaces/customer/user.dart' as AppUser;
+import 'package:customer/interfaces/customer/user.dart' as customer;
 
 const String backendUrl = 'http://jukkraputp.sytes.net';
 
 class API {
-  final CloudFS.FirebaseFirestore _firestoreDB =
-      CloudFS.FirebaseFirestore.instance;
+  final cloud_fs.FirebaseFirestore _firestoreDB =
+      cloud_fs.FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseDatabase _rtDB = FirebaseDatabase.instance;
 
   // Firestore Database
 
-  Future<Stream<CloudFS.QuerySnapshot<Map<String, dynamic>>>> getAllOrders(
+  Future<MenuList> getShopMenu(
+      {required String ownerUID, required String shopName}) async {
+    List<String> types = await getShopTypes(ownerUID, shopName);
+    MenuList menuList = MenuList(typesList: types);
+    for (var type in types) {
+      cloud_fs.QuerySnapshot<Map<String, dynamic>> querySnapshot =
+          await _firestoreDB
+              .collection('Menu')
+              .doc('$ownerUID-$shopName')
+              .collection(type)
+              .get();
+      for (var doc in querySnapshot.docs) {
+        menuList.menu[type]!.add(Item(
+            name: doc['name'],
+            price: doc['price'],
+            time: doc['time'],
+            image: doc['image'],
+            id: doc['id'],
+            available: doc['available']));
+      }
+    }
+    return menuList;
+  }
+
+  Future<List<String>> getShopTypes(String ownerUID, String shopName) async {
+    cloud_fs.DocumentSnapshot<Map<String, dynamic>> documentSnapshot =
+        await _firestoreDB.collection('Menu').doc('$ownerUID-$shopName').get();
+    List<String> types = [];
+    if (documentSnapshot.exists) {
+      var data = documentSnapshot.data();
+      List<String> typeList = [];
+      for (var type in data?['types'] ?? []) {
+        typeList.add(type.toString());
+      }
+      types = typeList;
+    }
+    return types;
+  }
+
+  Future<Stream<cloud_fs.QuerySnapshot<Map<String, dynamic>>>> getAllOrders(
       String uid) async {
-    print('api - getting all orders: $uid');
-    FoodOrder.FilteredOrders allOrders = FoodOrder.FilteredOrders();
-    Stream<CloudFS.QuerySnapshot<Map<String, dynamic>>> collectionStream =
-        await _firestoreDB
+    Stream<cloud_fs.QuerySnapshot<Map<String, dynamic>>> collectionStream =
+        _firestoreDB
             .collection('Orders')
             .where('uid', isEqualTo: uid)
             .snapshots();
     return collectionStream;
   }
 
-  Future<FoodOrder.FilteredOrders> allOrdersEventHandler(
-      CloudFS.QuerySnapshot<Map<String, dynamic>> event, String uid) async {
-    FoodOrder.FilteredOrders allOrders = FoodOrder.FilteredOrders();
+  Future<Stream<cloud_fs.QuerySnapshot<Map<String, dynamic>>>> getOrder({
+    required String ownerUID,
+    required String shopName,
+    required int orderId,
+    required String date,
+  }) async {
+    Stream<cloud_fs.QuerySnapshot<Map<String, dynamic>>> collectionStream =
+        _firestoreDB
+            .collection('Orders')
+            .where('ownerUID', isEqualTo: ownerUID)
+            .where('shopName', isEqualTo: shopName)
+            .where('orderId', isEqualTo: orderId)
+            .where('date', isEqualTo: date)
+            .snapshots();
+    return collectionStream;
+  }
+
+  Future<food_order.FilteredOrders> allOrdersEventHandler(
+      cloud_fs.QuerySnapshot<Map<String, dynamic>> event, String uid) async {
+    print('allOrdersEventHandler - uid: $uid');
+    food_order.FilteredOrders allOrders = food_order.FilteredOrders();
     for (var doc in event.docs) {
       Map<String, dynamic> obj = doc.data();
       int orderId = obj['orderId'];
+      String ownerUID = obj['ownerUID'];
       String shopName = obj['shopName'];
       String date = obj['date'];
       bool isCompleted = obj['isCompleted'];
       bool isFinished = obj['isFinished'];
       bool isPaid = obj['isPaid'];
-      print(
-          'api - getAllOrders: orderId=$orderId, shopName=$shopName, date=$date, isComplete=$isCompleted');
+      String? paymentImage = obj['paymentImage'];
       if (isCompleted) {
         // search in firestore
-        CloudFS.QuerySnapshot<Map<String, dynamic>> snapshot =
+        cloud_fs.QuerySnapshot<Map<String, dynamic>> snapshot =
             await _firestoreDB
                 .collection('History')
-                .doc(shopName)
+                .doc('$ownerUID-$shopName')
                 .collection(date)
                 .where('orderId', isEqualTo: orderId)
                 .get();
-        print('api - snapshot: $snapshot');
         for (var doc in snapshot.docs) {
           var data = doc.data();
-          CloudFS.Timestamp timestamp = data['date'];
+          cloud_fs.Timestamp timestamp = data['date'];
           List<ItemCounter> itemList = [];
           for (var item in data['itemList']) {
             itemList.add(ItemCounter(
-                Item(item['name'], item['price'], item['image'], item['id']),
+                Item(
+                  name: item['name'],
+                  price: item['price'],
+                  time: item['time'],
+                  image: item['image'],
+                  id: item['id'],
+                ),
                 item['count']));
           }
+          String shopKey = '$ownerUID-$shopName';
           // Completed
-          FoodOrder.Order order = FoodOrder.Order(
-              uid,
-              shopName,
-              data['phoneNumber'],
-              itemList,
-              data['cost'],
-              DateTime.fromMillisecondsSinceEpoch(
+          food_order.Order order = food_order.Order(
+              uid: uid,
+              ownerUID: ownerUID,
+              shopName: shopName,
+              phoneNumber: data['shopPhoneNumber'],
+              itemList: itemList,
+              cost: data['cost'],
+              date: DateTime.fromMillisecondsSinceEpoch(
                   timestamp.millisecondsSinceEpoch),
               isCompleted: isCompleted,
               isFinished: isFinished,
-              isPaid: isPaid);
-          if (allOrders.completed.containsKey(shopName)) {
-            allOrders.completed[shopName]!.add(order);
+              isPaid: isPaid,
+              orderId: orderId,
+              paymentImage: paymentImage);
+          if (allOrders.completed.containsKey(shopKey)) {
+            allOrders.completed[shopKey]!.add(order);
           } else {
-            allOrders.completed[shopName] = [order];
+            allOrders.completed[shopKey] = [order];
           }
         }
       } else {
         // search in real time database
         DatabaseReference ref = FirebaseDatabase.instance.ref();
-        DataSnapshot dataSnapshot =
-            await ref.child('Order/$shopName/$date/order$orderId').get();
+        String path = 'Order/$ownerUID-$shopName/$date/order$orderId';
+        print(path);
+        DataSnapshot dataSnapshot = await ref.child(path).get();
+
         Map<String, dynamic> dataObj =
             json.decode(json.encode(dataSnapshot.value));
         bool isFinished = dataObj['isFinished'];
         List<ItemCounter> itemList = [];
         for (var item in dataObj['itemList']) {
           itemList.add(ItemCounter(
-              Item(item['name'], item['price'], item['image'], item['id']),
+              Item(
+                  name: item['name'],
+                  price: item['price'],
+                  time: item['time'],
+                  image: item['image'],
+                  id: item['id']),
               item['count']));
         }
-        FoodOrder.Order order = FoodOrder.Order(
-            uid,
-            shopName,
-            dataObj['phoneNumber'],
-            itemList,
-            dataObj['cost'],
-            DateTime.parse(dataObj['date']),
+        num cost = dataObj['cost'];
+        food_order.Order order = food_order.Order(
+            uid: uid,
+            ownerUID: ownerUID,
+            shopName: shopName,
+            phoneNumber: dataObj['shopPhoneNumber'],
+            itemList: itemList,
+            cost: cost.toDouble(),
+            date: DateTime.parse(dataObj['date']),
             isCompleted: isCompleted,
             isFinished: isFinished,
-            isPaid: isPaid);
+            isPaid: isPaid,
+            orderId: orderId,
+            paymentImage: paymentImage);
+        String shopKey = '$ownerUID-$shopName';
         if (isFinished) {
           // Ready
-          if (allOrders.ready.containsKey(shopName)) {
-            allOrders.ready[shopName]!.add(order);
+          if (allOrders.ready.containsKey(shopKey)) {
+            allOrders.ready[shopKey]!.add(order);
           } else {
-            allOrders.ready[shopName] = [order];
+            allOrders.ready[shopKey] = [order];
           }
         } else {
           // Cooking
-          if (allOrders.cooking.containsKey(shopName)) {
-            allOrders.cooking[shopName]!.add(order);
+          if (allOrders.cooking.containsKey(shopKey)) {
+            allOrders.cooking[shopKey]!.add(order);
           } else {
-            allOrders.cooking[shopName] = [order];
+            allOrders.cooking[shopKey] = [order];
           }
         }
+      }
+    }
+    print('Handler');
+    print('Cooking');
+    for (var orderList in allOrders.cooking.values) {
+      for (var order in orderList) {
+        print('shopName: ${order.shopName}, orderId: ${order.orderId}');
+      }
+    }
+    print('Ready');
+    for (var orderList in allOrders.ready.values) {
+      for (var order in orderList) {
+        print('shopName: ${order.shopName}, orderId: ${order.orderId}');
+      }
+    }
+    print('Completed');
+    for (var orderList in allOrders.completed.values) {
+      for (var order in orderList) {
+        print('shopName: ${order.shopName}, orderId: ${order.orderId}');
       }
     }
     return allOrders;
   }
 
   Future<String?> getShopName(String key) async {
-    CloudFS.DocumentSnapshot<Map<String, dynamic>> docSnapshot =
+    cloud_fs.DocumentSnapshot<Map<String, dynamic>> docSnapshot =
         await _firestoreDB.collection('ShopList').doc(key).get();
     if (docSnapshot.exists) {
       return docSnapshot['name'];
@@ -142,77 +238,65 @@ class API {
     return null;
   }
 
-  Future<List<ShopInfo>> getShopList() async {
-    CloudFS.QuerySnapshot querySnapshot =
-        await _firestoreDB.collection('ShopList').get();
+  Future<List<ShopInfo>> getShopList(Position pos) async {
+    // 1 latitude = 111.1 km
+    double lat = 1 / 111.1;
+    // 1 longitude = 111.321 km
+    double lon = 1 / 111.321;
+    double distanceFromCenter = 20;
+    double distance =
+        sqrt(pow(distanceFromCenter, 2) + pow(distanceFromCenter, 2)); // km
+    double lowerLat = pos.latitude - (lat * distance);
+    double lowerLon = pos.longitude - (lon * distance);
+    double greaterLat = pos.latitude + (lat * distance);
+    double greaterLon = pos.longitude + (lon * distance);
+    cloud_fs.GeoPoint lesserGeopoint = cloud_fs.GeoPoint(lowerLat, lowerLon);
+    cloud_fs.GeoPoint greaterGeopoint =
+        cloud_fs.GeoPoint(greaterLat, greaterLon);
+    cloud_fs.QuerySnapshot querySnapshot = await cloud_fs
+        .FirebaseFirestore.instance
+        .collection('ShopList')
+        .where("position", isGreaterThanOrEqualTo: lesserGeopoint)
+        .where("position", isLessThanOrEqualTo: greaterGeopoint)
+        .get();
     List<dynamic> shopList =
         querySnapshot.docs.map((doc) => doc.data()).toList();
     List<ShopInfo> res = [];
     for (var i = 0; i < shopList.length; i++) {
-      if (shopList[i]['name'] != null) {
+      if (shopList[i]['shopName'] != null) {
+        cloud_fs.GeoPoint geoPoint = shopList[i]['position'];
         ShopInfo obj = ShopInfo(
-            name: shopList[i]['name'],
+            name: shopList[i]['shopName'],
             rating: shopList[i]['rating'],
-            review: shopList[i]['review'],
-            phoneNumber: shopList[i]['phoneNumber']);
+            review: shopList[i]['rater'],
+            phoneNumber: shopList[i]['phoneNumber'],
+            ownerUID: shopList[i]['ownerUID'],
+            latitude: geoPoint.latitude,
+            longitude: geoPoint.longitude);
         res.add(obj);
       }
     }
+    res.sort(((a, b) => a.compareTo(b, pos)));
     return res;
   }
 
-  Future<ShopInfo?> getShopInfo(String shopName) async {
-    CloudFS.DocumentSnapshot docSnapshot =
-        await _firestoreDB.collection('ShopList').doc(shopName).get();
+  Future<ShopInfo?> getShopInfo(String ownerUID, String shopName) async {
+    cloud_fs.DocumentSnapshot docSnapshot = await _firestoreDB
+        .collection('ShopList')
+        .doc('$ownerUID-$shopName')
+        .get();
     if (docSnapshot.exists) {
       Map<String, dynamic> data = json.decode(json.encode(docSnapshot.data()!));
       return ShopInfo(
           name: data['name'],
           rating: data['rating'],
           review: data['review'],
-          phoneNumber: data['phoneNumber']);
+          phoneNumber: data['phoneNumber'],
+          ownerUID: data['ownerUID'],
+          latitude: data['latitude'],
+          longitude: data['longitude']);
     }
     return null;
-  }
-
-  /* Future<String?> getshopName(String token) async {
-    try {
-      var doc = await _firestoreDB.collection('TokenList').doc(token).get();
-      return doc.data()?['key'];
-    } on Exception catch (_) {
-      return null;
-    }
-  } */
-
-  Future<String?> getMode(String token) async {
-    try {
-      var doc = await _firestoreDB.collection('TokenList').doc(token).get();
-      return doc.data()?['mode'];
-    } on Exception catch (_) {
-      return null;
-    }
-  }
-
-  /// Set Name and Price of MenuList object.
-  Future<MenuList> setNameAndPrice(
-      String key, MenuList menuList, ListResult types) async {
-    var ref = _firestoreDB.collection('Menu').doc(key);
-    for (var typeRef in types.prefixes) {
-      var type = typeRef.name;
-      var querySnapshot = await ref.collection(type).get();
-      Map<String, Map<String, dynamic>> infoMap = {};
-      for (var doc in querySnapshot.docs) {
-        infoMap[doc.id] = doc.data();
-      }
-      menuList.menu[type]?.forEach((element) {
-        var id = element.id;
-        if (infoMap.containsKey(id)) {
-          element.name = infoMap[id]?['name'];
-          element.price = '${infoMap[id]?['price']}';
-        }
-      });
-    }
-    return menuList;
   }
 
   Future<History> getHistory(String shopName, String orderDocId) async {
@@ -274,84 +358,43 @@ class API {
         .putString('foo file');
   }
 
-  Future<String> getImage(String key, String type, String name) async {
-    var imageURL =
-        await _storage.ref().child('$key/$type/$name.jpg').getDownloadURL();
-    return imageURL;
-  }
-
-  Future<MenuList> getMenuList(String shopName) async {
-    print('getting menuList');
-    var shopRef = _storage.ref().child(shopName);
-    var types = await shopRef.listAll();
-    MenuList result = MenuList(types: types);
-    for (var typeRef in types.prefixes) {
-      result.menu[typeRef.name] = [];
-      var images = await typeRef.listAll();
-      var imagesRefList = images.items;
-      imagesRefList.sort(((a, b) => a.name
-          .substring(a.name.length - 6, a.name.length - 4)
-          .compareTo(b.name.substring(b.name.length - 6, b.name.length - 4))));
-      for (var imageRef in imagesRefList) {
-        if (imageRef.name.contains('not-in-use')) {
-          result.menu.remove(typeRef.name);
-          break;
-        }
-        var url = await imageRef.getDownloadURL();
-        if (url.contains('.jpg')) {
-          Item newItem = Item('', '', url,
-              imageRef.name.substring(0, imageRef.name.length - 4));
-          result.menu[typeRef.name]?.add(newItem);
-        }
-      }
-    }
-    await setNameAndPrice(shopName, result, types);
-    return result;
-  }
-
-  // gen new id by searching on storage
-  Future<String> genNewId(String key, String type) async {
-    key = key.split('_').first;
-    print('genNewId: $key, $type');
-    var typeRef = _storage.ref().child(key).child(type);
-    final items = await typeRef.listAll();
-    final itemsRefList = items.items;
-    itemsRefList.sort(((a, b) => a.name
-        .substring(a.name.length - 6, a.name.length - 4)
-        .compareTo(b.name.substring(b.name.length - 6, b.name.length - 4))));
-    if (itemsRefList.isNotEmpty) {
-      var foodId = itemsRefList.last.name
-          .substring(0, itemsRefList.last.name.length - 4);
-      late String lastId;
-      lastId = foodId.split('-').last;
-      if (lastId == 'foo') {
-        lastId = '-1';
-      }
-      return (double.parse(lastId) + 1).toString();
-    }
-    return '';
-  }
-
-  /* Future<String> genImageUrl(Uint8List image) async {
-    late String res;
-    final Reference ref = _storage.ref().child('genUrl').child('tempImg.png');
-    res = await ref.putData(image).then((p0) async {
-      res = await ref.getDownloadURL();
-      return res;
-    });
-    return res;
-  } */
-
   // Chat
 
   // subscribe to firebase real-time
 
   // Through backend server
 
+  Future<http.Response> uploadPaymentImage(
+      {required String ownerUID,
+      required String shopName,
+      required String date,
+      required,
+      required int orderId,
+      required Uint8List bytesImage}) async {
+    Reference ref = _storage.ref('$ownerUID-$shopName-payment/order$orderId');
+    late String imageUrl;
+    http.Response res;
+    await ref.putData(bytesImage);
+    imageUrl = await ref.getDownloadURL();
+    res = await http.post(Uri.parse('$backendUrl:7777/upload-payment-image'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode({
+          'ownerUID': ownerUID,
+          'shopName': shopName,
+          'date': date,
+          'orderId': orderId,
+          'paymentImageUrl': imageUrl
+        }));
+    return res;
+  }
+
   // save order to firebase
   Future<http.Response> saveOrder(
       String uid, String shopName, int orderId) async {
-    http.Response res = await http.post(Uri.parse('$backendUrl/save-order'),
+    http.Response res = await http.post(
+        Uri.parse('$backendUrl:7777/save-order'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -361,22 +404,25 @@ class API {
   }
 
   // register
-  Future<RegisterResult> register(
+  Future<http.Response> register(
       {required String username,
+      required String email,
       required String password,
-      String mode = 'Register'}) async {
-    if (password.length < 6) {
-      return RegisterResult(
-          message: 'password required the minimum length of 6');
-    }
-    http.Response res = await http.post(Uri.parse('$backendUrl/register'),
+      required String phoneNumber,
+      String countryCode = '66',
+      String mode = 'Customer'}) async {
+    http.Response res = await http.post(Uri.parse('$backendUrl:7777/register'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
-        body: jsonEncode(
-            {'username': username, 'password': password, 'mode': mode}));
-    print(res);
-    return RegisterResult();
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+          'email': email,
+          'phoneNumber': '+$countryCode$phoneNumber',
+          'mode': mode
+        }));
+    return res;
   }
 
   // delete everything relate to pos tokens
@@ -399,19 +445,21 @@ class API {
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode({'key': shopName, 'mode': mode}));
-    print(res.body);
     return jsonDecode(res.body)['OTP'];
   }
 
   // Write data to database through backend server api
-  Future<http.Response> addOrder(FoodOrder.Order order) async {
-    String jsonEncoded = order.toJsonEncoded();
-    print('api - addOrder: $jsonEncoded');
-    return http.post(Uri.parse('http://jukkraputp.sytes.net:7777/add'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncoded);
+  Future<http.Response> addOrder(food_order.Order order) async {
+    String? IID_TOKEN = await FirebaseMessaging.instance.getToken();
+    String jsonEncoded = order.toJsonEncoded(args: {'IID_TOKEN': IID_TOKEN});
+
+    http.Response httpRes =
+        await http.post(Uri.parse('http://jukkraputp.sytes.net:7777/add'),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: jsonEncoded);
+    return httpRes;
   }
 
   // get total amount of an order
@@ -424,7 +472,7 @@ class API {
       var item = menuList.menu[type]![index];
       double itemVal = 0;
       try {
-        itemVal = double.parse(item.price) * value;
+        itemVal = item.price * value;
       } on Exception catch (_) {
         itemVal = 0;
       }
@@ -456,33 +504,21 @@ class API {
   // update new picture in firebase storage
   Future<bool> updateStorageData(
       String shopName, Map<String, List<Item>> obj) async {
-    for (var key in obj.keys) {
-      for (var item in obj[key]!) {
-        print(item);
-      }
-    }
-    print('updating firebase');
     final shopRef = _storage.ref().child(shopName);
     final types = obj.keys;
     for (var type in types) {
       final typeRef = shopRef.child(type);
       final updateList = obj[type]!;
       for (var item in updateList) {
-        print('${item.id}, ${item.delete}');
         final itemRef = typeRef.child('${item.id}.jpg');
-        print(itemRef);
-        var imageList = await typeRef.listAll();
-        for (var image in imageList.items) {
-          print(await image.getDownloadURL());
-        }
         try {
           if (item.delete) {
             itemRef.delete();
           } else {
             if (item.bytes != null) await itemRef.putData(item.bytes!);
           }
-          await updateProductInfo(shopName, type, item.id, item.name,
-              double.parse(item.price).toDouble(),
+          await updateProductInfo(
+              shopName, type, item.id, item.name, item.price,
               delete: item.delete);
         } on FirebaseException catch (e) {
           print(e);
@@ -511,13 +547,13 @@ class API {
 
   // ------------------- Manager --------------------//
 
-  Stream<CloudFS.DocumentSnapshot<Map<String, dynamic>>> listenFirestore(
+  Stream<cloud_fs.DocumentSnapshot<Map<String, dynamic>>> listenFirestore(
       {required String collection, required String documentId}) {
     return _firestoreDB.collection(collection).doc(documentId).snapshots();
   }
 
-  Future<AppUser.User?> getUserInfo(String userId) async {
-    CloudFS.DocumentSnapshot<Object> res =
+  Future<customer.User?> getUserInfo(String userId) async {
+    cloud_fs.DocumentSnapshot<Object> res =
         await _firestoreDB.collection('Manager').doc(userId).get();
     var data = res.data();
     if (data != null) {
@@ -526,7 +562,7 @@ class API {
       List<String> shopList = [];
       String? receptionToken;
       String? chefToken;
-      CloudFS.DocumentSnapshot<Object> reception =
+      cloud_fs.DocumentSnapshot<Object> reception =
           await _firestoreDB.collection('OTP').doc(obj['Reception']).get();
       if (reception.data() != null) {
         var receptionData = jsonDecode(jsonEncode(reception.data()));
@@ -536,7 +572,7 @@ class API {
           receptionToken = obj['Reception'];
         }
       }
-      CloudFS.DocumentSnapshot<Object> chef =
+      cloud_fs.DocumentSnapshot<Object> chef =
           await _firestoreDB.collection('OTP').doc(obj['Chef']).get();
       if (chef.data() != null) {
         var chefData = jsonDecode(jsonEncode(chef.data()));
@@ -550,7 +586,7 @@ class API {
         shopList.add(shopName.toString());
       }
 
-      AppUser.User user = AppUser.User(name, shopList);
+      customer.User user = customer.User(name, shopList);
       return user;
     }
     return null;
@@ -605,9 +641,6 @@ class API {
   // start transaction
   Future<http.Response> createTrans(
       String sourceId, int amount, String currency) async {
-    print(sourceId);
-    print(amount);
-    print(currency);
     var response = await http.post(
         Uri.parse('http://jukkraputp.sytes.net:8888/api/v1/start-trans'),
         headers: <String, String>{
@@ -618,7 +651,6 @@ class API {
           'amount': amount * 100,
           'currency': currency
         }));
-    print(response.statusCode);
     return response;
   }
 }

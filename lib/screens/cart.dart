@@ -2,6 +2,7 @@ import 'package:customer/interfaces/basket.dart';
 import 'package:customer/interfaces/item.dart';
 import 'package:customer/interfaces/shop_info.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:customer/screens/checkout.dart';
 import 'package:customer/util/foods.dart';
@@ -16,7 +17,8 @@ class Cart extends StatefulWidget {
       this.shrinkWrap,
       this.physics,
       this.checkout = true,
-      required this.updateBasket});
+      required this.updateBasket,
+      required this.setOrderListener});
 
   final User user;
   final ShopInfo shopInfo;
@@ -24,23 +26,36 @@ class Cart extends StatefulWidget {
   final bool? shrinkWrap;
   final ScrollPhysics? physics;
   final bool checkout;
-  final void Function(String, {Item? item, String mode}) updateBasket;
+  final void Function(
+      {required String ownerUID,
+      required String shopName,
+      Item? item,
+      String mode}) updateBasket;
+  final void Function(
+      {required Stream<DatabaseEvent> orderListener,
+      required String ownerUID,
+      required String shopName,
+      required int orderId}) setOrderListener;
 
   @override
   _CartState createState() => _CartState();
 }
 
 class _CartState extends State<Cart> with AutomaticKeepAliveClientMixin<Cart> {
-  void updateBasket(String shopName, {Item? item, String mode = '+'}) {
+  void updateBasket(
+      {required String ownerUID,
+      required String shopName,
+      Item? item,
+      String mode = '+'}) {
     setState(() {
-      widget.updateBasket(shopName, item: item, mode: mode);
+      widget.updateBasket(
+          ownerUID: ownerUID, shopName: shopName, item: item, mode: mode);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    print('Cart: ${widget.basket}');
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.fromLTRB(10.0, 0, 10.0, 0),
@@ -50,7 +65,7 @@ class _CartState extends State<Cart> with AutomaticKeepAliveClientMixin<Cart> {
           itemCount: widget.basket.itemList.length,
           itemBuilder: (BuildContext context, int index) {
             return CartItem(
-              shopName: widget.shopInfo.name,
+              shopInfo: widget.shopInfo,
               itemCounter: widget.basket.itemList[index],
               isFav: false,
               updateBasket: updateBasket,
@@ -70,6 +85,7 @@ class _CartState extends State<Cart> with AutomaticKeepAliveClientMixin<Cart> {
                         shopInfo: widget.shopInfo,
                         basket: widget.basket,
                         updateBasket: updateBasket,
+                        setOrderListener: widget.setOrderListener,
                       );
                     },
                   ),

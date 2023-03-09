@@ -18,7 +18,7 @@ class PaymentSelectionScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Select Payment')),
       body: ListView(
         children: <Widget>[
-          // Cash
+          /* // Cash
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
             child: ElevatedButton(
@@ -35,7 +35,7 @@ class PaymentSelectionScreen extends StatelessWidget {
                     Text(Payment.cash)
                   ],
                 )),
-          ),
+          ), */
           // PromptPay
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
@@ -55,7 +55,7 @@ class PaymentSelectionScreen extends StatelessWidget {
                     Text(Payment.promptpay)
                   ],
                 )),
-          ),
+          ), /* 
           // Mobile Banking
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
@@ -73,7 +73,7 @@ class PaymentSelectionScreen extends StatelessWidget {
                     Text(Payment.mobileBanking)
                   ],
                 )),
-          ),
+          ), */
         ],
       ),
     );
